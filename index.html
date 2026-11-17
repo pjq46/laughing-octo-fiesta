@@ -20,6 +20,9 @@ body{display:flex;align-items:center;justify-content:center;background:radial-gr
 .sub{margin-top:10px;font-family:var(--pixel);font-size:clamp(11px,3.4vw,13px);color:var(--text-dim);letter-spacing:.3em;min-height:16px}
 .bar{margin-top:clamp(30px,8vw,48px);height:3px;background:rgba(255,255,255,.08);border-radius:2px;overflow:hidden}
 .fill{height:100%;width:0%;background:linear-gradient(90deg,#5f8bff,#9bb7ff);transition:width .2s ease}
+.bar.indet .fill{width:34%;transition:none;animation:indet 1.15s cubic-bezier(.45,0,.55,1) infinite}
+@keyframes indet{0%{transform:translateX(-120%)}100%{transform:translateX(330%)}}
+#stage{position:fixed;inset:0;width:100%;height:100%;border:0;background:#05070c;display:none;z-index:9}
 .meta{margin-top:12px;font-family:var(--pixel);font-size:12px;letter-spacing:.14em;color:var(--text-dim);font-variant-numeric:tabular-nums}
 .meta em{font-style:normal;color:var(--accent)}
 .tip{margin-top:6px;font-size:11px;letter-spacing:.08em;color:#5b6675;min-height:15px}
@@ -37,6 +40,9 @@ body{display:flex;align-items:center;justify-content:center;background:radial-gr
   <div class="err" id="err"></div>
   <button class="retry" id="retry">重试</button>
 </div>
+<!-- 远程页面放进沙箱 iframe 运行，不再用 document.write 覆盖本页。
+      不再加 sandbox：同源运行，游戏内的 localStorage 存档才可用。 -->
+<iframe id="stage" title="游戏" referrerpolicy="no-referrer" allow="fullscreen; gamepad; autoplay" allowfullscreen></iframe>
 <script>
 (function () {
   var meta = function (n) { var m = document.querySelector('meta[name="' + n + '"]'); return m ? m.getAttribute('content') : ''; };
@@ -91,17 +97,82 @@ body{display:flex;align-items:center;justify-content:center;background:radial-gr
   }
 
   /* ---------- 3. 下载与进度 ---------- */
+  // 总量自动识别（两级，无手写值）：
+  //   ① jsDelivr data API（data.jsdelivr.com/v1/package/...）：直接给未压缩的真实字节数，随文件自动变
+  //   ② 上一次成功下载实测到的字节数，存在 localStorage，下次直接用（API 不通时也能对上）
+  //   两级都拿不到时不做估算：只显示已下载量 + 不确定动画，绝不瞎报百分比。
+  // 注意：跨域 fetch 只暴露 content-length/content-type 等少数头，content-encoding / content-range 读不到，
+  //      而 raw / CDN 的 content-length 往往是压缩后的值，所以不能拿来做总量。
+  var FILE_KEY = ((document.querySelector('meta[name="game-repo"]') || {}).content || '') + '|' +
+                 ((document.querySelector('meta[name="game-file"]') || {}).content || 'game.html');
+  var SIZE_KEY = 'loader_size_' + FILE_KEY;
+
+  function readSize() {
+    try { var v = parseInt(localStorage.getItem(SIZE_KEY) || '0', 10); return v > 1024 ? v : 0; } catch (e) { return 0; }
+  }
+  function writeSize(n) { if (n > 1024) { try { localStorage.setItem(SIZE_KEY, String(n)); } catch (e) {} } }
+
+  var TOTAL = readSize();   // 本次用于算百分比的总量（0 = 不知道，走不确定动画）
+
+  function apiUrl() {
+    var repo = (document.querySelector('meta[name="game-repo"]') || {}).content || '';
+    var m = repo.match(/^([^\/\s]+)\/([^\/@\s]+)(?:@([^\s\/]+))?/);
+    if (!m) return '';
+    return 'https://data.jsdelivr.com/v1/package/gh/' + m[1] + '/' + m[2] + '@' + (m[3] || 'main') + '/flat';
+  }
+
+  // 问 jsDelivr 要这个文件的真实（未压缩）字节数
+  function probeApiSize() {
+    var url = apiUrl();
+    if (!url || typeof fetch !== 'function') return Promise.resolve(0);
+    var file = (document.querySelector('meta[name="game-file"]') || {}).content || 'game.html';
+    var want = '/' + file.replace(/^\//, '');
+    var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    var opt = { cache: 'no-store' };
+    if (ctrl) { opt.signal = ctrl.signal; setTimeout(function () { ctrl.abort('timeout'); }, 5000); }
+    return fetch(url, opt).then(function (r) {
+      if (!r.ok) return 0;
+      return r.json().then(function (d) {
+        var hit = ((d && d.files) || []).filter(function (x) {
+          var n = String(x.name || '');
+          return n.slice(-want.length) === want;
+        })[0];
+        var n = hit ? (hit.size || 0) : 0;
+        if (n > 1024) {
+          TOTAL = n; writeSize(n);
+          if (lastRec) paint(lastRec, 0, lastStart);   // 真值到手，立刻重算进度
+        }
+        return n;
+      });
+    }).catch(function () { return 0; });
+  }
+
   var ui = {};
-  ['fill', 'pct', 'size', 'speed', 'tip', 'err', 'retry'].forEach(function (k) { ui[k] = document.getElementById(k); });
-  var TOTAL_HINT = 6.5 * 1048576, lastTs = 0, lastBytes = 0;
+  ['fill', 'pct', 'size', 'speed', 'tip', 'err', 'retry', 'stage'].forEach(function (k) { ui[k] = document.getElementById(k); });
+  ui.bar = document.querySelector('.bar');
+  var lastTs = 0, lastBytes = 0, lastRec = 0, lastStart = 0, stageReady = false;
 
   function fmtMB(n) { return (n / 1048576).toFixed(1); }
+
+  // 有真实总量才算百分比；不知道总量时只报已下载量与速度，进度条走不确定动画。
+
+
   function paint(rec, total, startTs) {
-    var t = total || TOTAL_HINT;
-    var p = Math.max(0, Math.min(99, Math.round(rec / t * 100)));
-    ui.fill.style.width = p + '%';
-    ui.pct.textContent = p + '%';
-    ui.size.textContent = fmtMB(rec) + ' / ' + (total ? fmtMB(total) : '–') + ' MB';
+    if (stageReady) return;          // 已经进游戏了，别再回写进度
+    lastRec = rec; lastStart = startTs;
+    total = TOTAL;                                // 只认探测/缓存到的真实值
+    if (total && rec > total * 1.02) { total = 0; }   // 总量过时（文件变了）就退回不确定模式，等 API 纠正
+    if (total) {
+      ui.bar.classList.remove('indet');
+      var p = Math.max(0, Math.min(99, Math.round(rec / total * 100)));
+      ui.fill.style.width = p + '%';
+      ui.pct.textContent = p + '%';
+      ui.size.textContent = fmtMB(rec) + ' / ' + fmtMB(total) + ' MB';
+    } else {
+      ui.bar.classList.add('indet');
+      ui.pct.textContent = '--';
+      ui.size.textContent = fmtMB(rec) + ' MB';
+    }
     var now = Date.now(), dt = (now - (lastTs || startTs)) / 1000;
     if (dt > 0.6) {
       var sp = (rec - lastBytes) / dt;
@@ -110,22 +181,40 @@ body{display:flex;align-items:center;justify-content:center;background:radial-gr
     }
   }
 
+  // 固定的总时长会在慢网下误杀：改成空闲超时——连上之前给 CONNECT_TIMEOUT，
+  // 收到响应后每拿到一块数据就重置 IDLE_TIMEOUT，只有连续一段时间没有新数据才中断。
   function grab(m, onProgress) {
     var ctrl = typeof AbortController !== 'undefined' ? new AbortController() : null;
-    var timer = setTimeout(function () { if (ctrl) ctrl.abort('timeout'); }, 9000);
     var opt = { cache: 'no-store' };
     if (ctrl) opt.signal = ctrl.signal;
+
+    var CONNECT_TIMEOUT = 15000, IDLE_TIMEOUT = 15000, idle = null;
+    function arm(ms) {
+      if (!ctrl) return;
+      clearTimeout(idle);
+      idle = setTimeout(function () { ctrl.abort('timeout'); }, ms);
+    }
+    function disarm() { clearTimeout(idle); idle = null; }
+    arm(CONNECT_TIMEOUT);
+
     return fetch(m.url, opt).then(function (res) {
       if (!res.ok) throw new Error('HTTP ' + res.status);
-      var total = parseInt(res.headers.get('content-length') || '0', 10) || 0;
+      var total = TOTAL;   // 服务端 content-length 可能是压缩后的，不再采用
       if (!res.body || !res.body.getReader) {
-        clearTimeout(timer);
-        return res.text().then(function (txt) { onProgress(txt.length, total || txt.length, Date.now()); return txt; });
+        arm(IDLE_TIMEOUT);
+        return res.text().then(function (txt) {
+          disarm();
+          writeSize(txt.length);
+          onProgress(txt.length, total, Date.now());
+          return txt;
+        });
       }
+      arm(IDLE_TIMEOUT);
       var reader = res.body.getReader(), chunks = [], rec = 0, start = Date.now();
       return (function pump() {
         return reader.read().then(function (r) {
-          if (r.done) { clearTimeout(timer); return new Blob(chunks).text(); }
+          if (r.done) { disarm(); writeSize(rec); return new Blob(chunks).text(); }
+          arm(IDLE_TIMEOUT);
           chunks.push(r.value); rec += r.value.length;
           onProgress(rec, total, start);
           return pump();
@@ -135,19 +224,28 @@ body{display:flex;align-items:center;justify-content:center;background:radial-gr
   }
 
   function render(html) {
+    stageReady = true;
     ui.fill.style.width = '100%'; ui.pct.textContent = '100%'; ui.tip.textContent = '正在进入…';
-    try { document.open(); document.write(html); document.close(); }
-    catch (e) { fail('渲染失败：' + (e && e.message || e)); }
+    ui.bar.classList.remove('indet');
+    // 交给同源 iframe 渲染：不会像 document.write 那样把加载 UI 一起覆盖掉，
+    // 失败时重试按钮依旧可用，游戏内 localStorage 存档也能正常读写。
+    ui.stage.srcdoc = html;
+    ui.stage.style.display = 'block';
   }
 
   function fail(msg) {
+    ui.bar.classList.remove('indet');
     ui.err.style.display = 'block'; ui.err.textContent = msg;
     ui.retry.style.display = 'inline-block';
     ui.tip.textContent = '全部线路均不可用';
   }
 
   function run() {
+    stageReady = false;
+    probeApiSize();               // 后台拿真实大小，不阻塞下载
     ui.err.style.display = 'none'; ui.retry.style.display = 'none';
+    ui.stage.style.display = 'none';
+    ui.bar.classList.remove('indet');
     ui.fill.style.width = '0%'; ui.pct.textContent = '0%'; ui.size.textContent = '0.0 / – MB'; ui.speed.textContent = '–';
     lastTs = 0; lastBytes = 0;
     var i = 0, tried = [];
