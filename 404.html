@@ -43,7 +43,7 @@ body{display:flex;align-items:center;justify-content:center;background:radial-gr
 <!-- 远程页面放进沙箱 iframe 运行，不再用 document.write 覆盖本页。
       不再加 sandbox：同源运行，游戏内的 localStorage 存档才可用。 -->
 <iframe id="stage" title="游戏" referrerpolicy="no-referrer" allow="fullscreen; gamepad; autoplay" allowfullscreen></iframe>
-<script data-cfasync="false">
+<script>
 (function () {
   var meta = function (n) { var m = document.querySelector('meta[name="' + n + '"]'); return m ? m.getAttribute('content') : ''; };
   var qs = new URLSearchParams(location.search);
