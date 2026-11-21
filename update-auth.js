@@ -105,6 +105,53 @@
     });
   }
 
+  function decodeHash(value) {
+    var text = String(value || '');
+    if (/^[0-9a-f]{64}$/i.test(text)) return text.toLowerCase();
+    try {
+      var b64 = text.replace(/-/g, '+').replace(/_/g, '/');
+      while (b64.length % 4) b64 += '=';
+      var raw = atob(b64);
+      if (raw.length !== 32) return '';
+      var out = '';
+      for (var i = 0; i < raw.length; i++) out += ('0' + raw.charCodeAt(i).toString(16)).slice(-2);
+      return out;
+    } catch (e) { return ''; }
+  }
+
+  function pickRemoteHash(json, file) {
+    var entries = (json && json.files) || [];
+    for (var i = 0; i < entries.length; i++) {
+      if (String(entries[i].name || '') === '/' + file) return decodeHash(entries[i].hash);
+    }
+    return '';
+  }
+
+  /* 读取同目录的 game-version.json。该文件由 Pages 部署工作流根据 game.html 重新生成，
+     提供当前 main 的真实 SHA-256，避免 jsDelivr 元数据与实际文件不一致。 */
+  function fetchRemoteHash(file, timeoutMs) {
+    return new Promise(function (resolve) {
+      var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      var timer = null;
+      var options = { cache: 'no-store' };
+      if (controller) {
+        options.signal = controller.signal;
+        timer = setTimeout(function () { controller.abort(); }, timeoutMs);
+      }
+      var url = new URL('game-version.json', location.href).href + '?ts=' + Date.now();
+      fetch(url, options).then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.json();
+      }).then(function (json) {
+        if (timer) clearTimeout(timer);
+        resolve(json && json.file === file ? decodeHash(json.sha256) : '');
+      }).catch(function () {
+        if (timer) clearTimeout(timer);
+        resolve('');
+      });
+    });
+  }
+
   function runUpdate() {
     return new Promise(function (resolve) {
       var updateButton = document.getElementById('updYes');
@@ -130,14 +177,7 @@
       var metaRef = at < 0 ? 'main' : (repoMeta.slice(at + 1) || 'main');
       var baseRef = /^[0-9a-f]{7,40}$/i.test(metaRef) ? metaRef : (metaRef || 'main');
       var updateKey = 'loader_update_check|' + repoMeta + '|' + file;
-      var record = readJSON(updateKey) || {};
-      var expected = String(record.hash || meta('game-sha256') || '').toLowerCase();
-
-      if (!/^[0-9a-f]{64}$/.test(expected)) {
-        fail('更新失败：缺少新版本校验值');
-        return;
-      }
-
+      var metaHash = String(meta('game-sha256') || '').toLowerCase();
       var encodedRepo = encodePath(repoPath);
       var encodedFile = encodePath(file);
       var urls = [
@@ -146,31 +186,49 @@
         'https://cdn.jsdelivr.net/gh/' + encodedRepo + '@main/' + encodedFile,
         'https://raw.githubusercontent.com/' + encodedRepo + '/main/' + encodedFile
       ];
-      var index = 0;
 
-      function tryNext() {
-        if (index >= urls.length) {
-          fail('更新失败：下载失败或校验不一致，请检查网络后重试');
+      /* 不以本地缓存里的旧哈希作为目标值：先向 jsDelivr 元数据确认当前 main 的真实哈希。
+         这样即使页面上的“发现新版本”提示来自过期缓存，也不会拿旧哈希去校验新文件。 */
+      if (updateText) updateText.textContent = '正在确认新版本…';
+      fetchRemoteHash(file, 15000).then(function (remoteHash) {
+        if (!/^[0-9a-f]{64}$/.test(remoteHash)) {
+          fail('更新失败：无法获取新版本校验值，请稍后再试');
           return;
         }
-        if (updateText) updateText.textContent = '正在下载新版本…（' + (index + 1) + '/' + urls.length + '）';
-        download(urls[index++], 75000).then(function (buffer) {
-          return digest(buffer).then(function (hash) {
-            if (hash !== expected) throw new Error('SHA-256 不一致');
-            // 下载和校验成功后，记录可更新的 ref，再刷新由加载器重新读取。
-            writeJSON('loader_ref_override|' + repoMeta + '|' + file, {
-              base: baseRef, commit: 'main', sha: expected, at: Date.now()
-            });
-            writeJSON(updateKey, { at: Date.now(), hash: expected, dismissed: '' });
-            if (updateText) updateText.textContent = '更新完成，正在重新加载…';
-            location.reload();
-          });
-        }).catch(function () {
-          tryNext();
-        });
-      }
+        if (remoteHash === metaHash) {
+          var bar = document.getElementById('updBar');
+          writeJSON(updateKey, { at: Date.now(), hash: remoteHash, dismissed: remoteHash });
+          if (bar) bar.hidden = true;
+          fail('当前已是最新版本，无需更新');
+          return;
+        }
 
-      tryNext();
+        var expected = remoteHash;
+        var index = 0;
+
+        function tryNext() {
+          if (index >= urls.length) {
+            fail('更新失败：下载失败或校验不一致，请检查网络后重试');
+            return;
+          }
+          if (updateText) updateText.textContent = '正在下载新版本…（' + (index + 1) + '/' + urls.length + '）';
+          download(urls[index++], 75000).then(function (buffer) {
+            return digest(buffer).then(function (hash) {
+              if (hash !== expected) throw new Error('SHA-256 不一致');
+              writeJSON('loader_ref_override|' + repoMeta + '|' + file, {
+                base: baseRef, commit: 'main', sha: expected, at: Date.now()
+              });
+              writeJSON(updateKey, { at: Date.now(), hash: expected, dismissed: '' });
+              if (updateText) updateText.textContent = '更新完成，正在重新加载…';
+              location.reload();
+            });
+          }).catch(function () {
+            tryNext();
+          });
+        }
+
+        tryNext();
+      });
     });
   }
 
