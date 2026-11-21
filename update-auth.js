@@ -8,7 +8,6 @@
   var EXPECT_B64 = 'riArXcWTft1/39+/PAuVUO4XReTnZQ/o8Qq2zkayYOA=';
   var pendingResolve = null;
   var checking = false;
-  var authorizedOnce = false;
   var ui = null;
 
   function b64ToBytes(b64) {
@@ -48,6 +47,130 @@
       return safeEqual(bytesToB64(new Uint8Array(bits)), EXPECT_B64);
     }).catch(function () {
       return false;
+    });
+  }
+
+
+  function readJSON(key) {
+    try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) { return null; }
+  }
+
+  function writeJSON(key, value) {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
+  }
+
+  function meta(name) {
+    var el = document.querySelector('meta[name="' + name + '"]');
+    return el ? (el.getAttribute('content') || '') : '';
+  }
+
+  function encodePath(path) {
+    return path.split('/').map(encodeURIComponent).join('/');
+  }
+
+  function toHex(bytes) {
+    var out = '';
+    for (var i = 0; i < bytes.length; i++) out += ('0' + bytes[i].toString(16)).slice(-2);
+    return out;
+  }
+
+  function digest(buffer) {
+    if (!window.crypto || !window.crypto.subtle) {
+      return Promise.reject(new Error('浏览器不支持 SHA-256'));
+    }
+    return window.crypto.subtle.digest('SHA-256', buffer).then(function (bits) {
+      return toHex(new Uint8Array(bits));
+    });
+  }
+
+  function download(url, timeoutMs) {
+    return new Promise(function (resolve, reject) {
+      var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      var timer = null;
+      var options = { cache: 'no-store' };
+      if (controller) {
+        options.signal = controller.signal;
+        timer = setTimeout(function () { controller.abort(); }, timeoutMs);
+      }
+      fetch(url, options).then(function (response) {
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        return response.arrayBuffer();
+      }).then(function (buffer) {
+        if (timer) clearTimeout(timer);
+        resolve(buffer);
+      }).catch(function (error) {
+        if (timer) clearTimeout(timer);
+        reject(error);
+      });
+    });
+  }
+
+  function runUpdate() {
+    return new Promise(function (resolve) {
+      var updateButton = document.getElementById('updYes');
+      var ignoreButton = document.getElementById('updNo');
+      var updateText = document.getElementById('updText');
+      var repoMeta = meta('game-repo');
+      var file = (meta('game-file') || 'game.html').replace(/^\/+/, '');
+
+      function fail(message) {
+        if (updateText) updateText.textContent = message;
+        if (updateButton) updateButton.disabled = false;
+        if (ignoreButton) ignoreButton.disabled = false;
+        resolve(false);
+      }
+
+      if (!repoMeta || !file) {
+        fail('更新失败：缺少仓库配置');
+        return;
+      }
+
+      var at = repoMeta.lastIndexOf('@');
+      var repoPath = at < 0 ? repoMeta : repoMeta.slice(0, at);
+      var metaRef = at < 0 ? 'main' : (repoMeta.slice(at + 1) || 'main');
+      var baseRef = /^[0-9a-f]{7,40}$/i.test(metaRef) ? metaRef : (metaRef || 'main');
+      var updateKey = 'loader_update_check|' + repoMeta + '|' + file;
+      var record = readJSON(updateKey) || {};
+      var expected = String(record.hash || meta('game-sha256') || '').toLowerCase();
+
+      if (!/^[0-9a-f]{64}$/.test(expected)) {
+        fail('更新失败：缺少新版本校验值');
+        return;
+      }
+
+      var encodedRepo = encodePath(repoPath);
+      var encodedFile = encodePath(file);
+      var urls = [
+        'https://gcore.jsdelivr.net/gh/' + encodedRepo + '@main/' + encodedFile,
+        'https://fastly.jsdelivr.net/gh/' + encodedRepo + '@main/' + encodedFile,
+        'https://cdn.jsdelivr.net/gh/' + encodedRepo + '@main/' + encodedFile,
+        'https://raw.githubusercontent.com/' + encodedRepo + '/main/' + encodedFile
+      ];
+      var index = 0;
+
+      function tryNext() {
+        if (index >= urls.length) {
+          fail('更新失败：下载失败或校验不一致，请检查网络后重试');
+          return;
+        }
+        if (updateText) updateText.textContent = '正在下载新版本…（' + (index + 1) + '/' + urls.length + '）';
+        download(urls[index++], 75000).then(function (buffer) {
+          return digest(buffer).then(function (hash) {
+            if (hash !== expected) throw new Error('SHA-256 不一致');
+            // 下载和校验成功后，记录可更新的 ref，再刷新由加载器重新读取。
+            writeJSON('loader_ref_override|' + repoMeta + '|' + file, {
+              base: baseRef, commit: 'main', sha: expected, at: Date.now()
+            });
+            writeJSON(updateKey, { at: Date.now(), hash: expected, dismissed: '' });
+            if (updateText) updateText.textContent = '更新完成，正在重新加载…';
+            location.reload();
+          });
+        }).catch(function () {
+          tryNext();
+        });
+      }
+
+      tryNext();
     });
   }
 
@@ -169,22 +292,26 @@
 
     /* update-auth.js 加载成功后才放行“更新”按钮；若脚本缺失，按钮保持禁用。 */
     updateButton.disabled = false;
+    var running = false;
     updateButton.addEventListener('click', function (event) {
-      if (authorizedOnce) {
-        authorizedOnce = false;
-        return;
-      }
       event.preventDefault();
       event.stopImmediatePropagation();
+      if (running) return;
       var updateText = document.getElementById('updText');
+      var ignoreButton = document.getElementById('updNo');
       if (updateText) updateText.textContent = '检测到新版本，请输入密码后更新';
       ask().then(function (ok) {
         if (!ok) {
           if (updateText) updateText.textContent = '已取消更新';
           return;
         }
-        authorizedOnce = true;
-        updateButton.click();
+        running = true;
+        updateButton.disabled = true;
+        if (ignoreButton) ignoreButton.disabled = true;
+        runUpdate().then(function (success) {
+          running = false;
+          if (success && updateButton) updateButton.disabled = false;
+        });
       });
     }, true);
   }
