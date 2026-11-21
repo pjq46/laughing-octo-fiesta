@@ -1,0 +1,16 @@
+
+Enter file contents here
+/sw.js
+  Cache-Control: no-cache
+
+/update-auth.js
+  Cache-Control: no-cache
+
+/index.html
+  Cache-Control: no-cache
+
+/404.html
+  Cache-Control: no-cache
+
+/game-version.json
+  Cache-Control: no-store
