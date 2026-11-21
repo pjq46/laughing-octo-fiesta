@@ -1,0 +1,33 @@
+
+Enter file contents here
+name: Update game version manifest
+
+on:
+  push:
+    paths:
+      - game.html
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate version manifest
+        run: |
+          sha=$(sha256sum game.html | awk '{print $1}')
+          size=$(stat -c%s game.html)
+          printf '{"file":"game.html","sha256":"%s","size":%s,"updated":"%s"}\n' "$sha" "$size" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > game-version.json
+
+      - name: Commit manifest
+        run: |
+          git add game-version.json
+          if git diff --cached --quiet; then exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: update game-version.json"
+          git push
