@@ -1,11 +1,11 @@
 /* 游戏加载器 Service Worker：固定 commit 资源缓存优先，导航离线兜底。
    同时预缓存 update-auth.js，保证更新密码校验脚本可用。
    部署位置：与 index.html 同目录（GitHub Pages 项目站为仓库根目录）。 */
-var VERSION = 'game-loader-sw-v10';
+var VERSION = 'game-loader-sw-v11';
 var SCOPE = self.registration.scope;
 var INDEX_URL = new URL('index.html', SCOPE).href;
 var PAGE404_URL = new URL('404.html', SCOPE).href;
-var AUTH_URL = new URL('update-auth.js?v=9', SCOPE).href;
+var AUTH_URL = new URL('update-auth.js?v=10', SCOPE).href;
 var CORE_ASSETS = [INDEX_URL, PAGE404_URL, AUTH_URL];
 
 self.addEventListener('install', function (event) {
@@ -43,6 +43,14 @@ function cacheResponse(request, response) {
   return response;
 }
 
+function networkFirst(request) {
+  return fetch(request, { cache: 'no-cache' }).then(function (response) {
+    return cacheResponse(request, response);
+  }).catch(function () {
+    return caches.match(request);
+  });
+}
+
 function networkFirstNavigation(request) {
   return fetch(request).then(function (response) {
     return cacheResponse(request, response);
@@ -74,8 +82,8 @@ self.addEventListener('fetch', function (event) {
 
   var url = new URL(request.url);
   if (url.origin === self.location.origin && url.pathname.endsWith('/update-auth.js')) {
-    // 密码校验脚本：缓存优先，保证页面加载后更新按钮能正常启用。
-    event.respondWith(cacheFirst(request));
+    // 密码校验脚本：联网时取最新并刷新缓存，断网时回退到最近缓存。
+    event.respondWith(networkFirst(request));
     return;
   }
 

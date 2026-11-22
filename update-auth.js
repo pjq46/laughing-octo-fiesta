@@ -6,6 +6,8 @@
   var ITERATIONS = 210000;
   var SALT_B64 = 'BcyYjKvfc7Yjwfudj/JYtQ==';
   var EXPECT_B64 = 'FdCgYdlI3d8C///v4jU09VZ4abXKzjdWU5iYZrq7w9w=';
+  var MAX_GAME_BYTES = 33554432;
+  var MAX_MANIFEST_BYTES = 65536;
   var pendingResolve = null;
   var checking = false;
   var ui = null;
@@ -31,7 +33,7 @@
   }
 
   function verify(password) {
-    if (!password) return Promise.resolve(false);
+    if (!password || password.length > 256) return Promise.resolve(false);
     if (!window.crypto || !window.crypto.subtle) return Promise.resolve(false);
     var encoder = new TextEncoder();
     return window.crypto.subtle.importKey(
@@ -56,7 +58,7 @@
   }
 
   function writeJSON(key, value) {
-    try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) {}
+    try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch (e) { return false; }
   }
 
   function meta(name) {
@@ -94,7 +96,39 @@
       }
       fetch(url, options).then(function (response) {
         if (!response.ok) throw new Error('HTTP ' + response.status);
-        return response.arrayBuffer();
+        var length = Number(response.headers.get('Content-Length') || 0);
+        if (length > MAX_GAME_BYTES) throw new Error('文件过大');
+        if (response.body && response.body.getReader) {
+          var reader = response.body.getReader();
+          var chunks = [];
+          var total = 0;
+          function readNext() {
+            return reader.read().then(function (part) {
+              if (part.done) {
+                var output = new Uint8Array(total);
+                var offset = 0;
+                for (var i = 0; i < chunks.length; i++) {
+                  output.set(chunks[i], offset);
+                  offset += chunks[i].length;
+                }
+                return output.buffer;
+              }
+              total += part.value.length;
+              if (total > MAX_GAME_BYTES) {
+                return reader.cancel().then(function () {
+                  throw new Error('文件过大');
+                });
+              }
+              chunks.push(part.value);
+              return readNext();
+            });
+          }
+          return readNext();
+        }
+        return response.arrayBuffer().then(function (buffer) {
+          if (buffer.byteLength > MAX_GAME_BYTES) throw new Error('文件过大');
+          return buffer;
+        });
       }).then(function (buffer) {
         if (timer) clearTimeout(timer);
         resolve(buffer);
@@ -141,13 +175,60 @@
       var url = new URL('game-version.json', location.href).href + '?ts=' + Date.now();
       fetch(url, options).then(function (response) {
         if (!response.ok) throw new Error('HTTP ' + response.status);
-        return response.json();
-      }).then(function (json) {
+        var length = Number(response.headers.get('Content-Length') || 0);
+        if (length > MAX_MANIFEST_BYTES) throw new Error('版本清单过大');
+        return response.text();
+      }).then(function (text) {
+        if (text.length > MAX_MANIFEST_BYTES) throw new Error('版本清单过大');
+        var json = JSON.parse(text);
         if (timer) clearTimeout(timer);
         resolve(json && json.file === file ? decodeHash(json.sha256) : '');
       }).catch(function () {
         if (timer) clearTimeout(timer);
         resolve('');
+      });
+    });
+  }
+
+  function openGameCache() {
+    return new Promise(function (resolve, reject) {
+      if (!window.indexedDB) {
+        reject(new Error('IndexedDB unavailable'));
+        return;
+      }
+      var request = indexedDB.open('game_loader_cache_v1', 1);
+      request.onupgradeneeded = function () {
+        var db = request.result;
+        if (!db.objectStoreNames.contains('pages')) db.createObjectStore('pages', { keyPath: 'key' });
+      };
+      request.onsuccess = function () { resolve(request.result); };
+      request.onerror = function () { reject(request.error || new Error('IndexedDB open failed')); };
+    });
+  }
+
+  /* 更新时先写入新缓存，再切换版本指针；这样重新加载后无需重复下载，
+     即使更新后马上断网也能进入。顺带删除同一游戏的历史缓存，避免占满配额。 */
+  function cacheGame(record, prefix) {
+    return openGameCache().then(function (db) {
+      return new Promise(function (resolve, reject) {
+        try {
+          var tx = db.transaction('pages', 'readwrite');
+          var store = tx.objectStore('pages');
+          store.put(record);
+          var keys = store.getAllKeys();
+          keys.onsuccess = function () {
+            (keys.result || []).forEach(function (key) {
+              var text = String(key);
+              if (text.indexOf(prefix) === 0 && text !== record.key) store.delete(text);
+            });
+          };
+          tx.oncomplete = function () { db.close(); resolve(true); };
+          tx.onerror = function () { db.close(); reject(tx.error || new Error('IndexedDB write failed')); };
+          tx.onabort = function () { db.close(); reject(tx.error || new Error('IndexedDB write aborted')); };
+        } catch (e) {
+          db.close();
+          reject(e);
+        }
       });
     });
   }
@@ -212,15 +293,31 @@
             return;
           }
           if (updateText) updateText.textContent = '正在下载新版本…（' + (index + 1) + '/' + urls.length + '）';
-          download(urls[index++], 75000).then(function (buffer) {
+          var currentUrl = urls[index++];
+          download(currentUrl, 75000).then(function (buffer) {
             return digest(buffer).then(function (hash) {
               if (hash !== expected) throw new Error('SHA-256 不一致');
-              writeJSON('loader_ref_override|' + repoMeta + '|' + file, {
-                base: baseRef, commit: 'main', sha: expected, at: Date.now()
+              var key = 'page|' + location.origin + '|' + encodedRepo + '@main|' + file + '|' + expected;
+              var prefix = 'page|' + location.origin + '|' + encodedRepo + '@';
+              return new Blob([buffer]).text().then(function (html) {
+                return cacheGame({
+                  key: key,
+                  html: html,
+                  url: currentUrl,
+                  savedAt: Date.now(),
+                  digest: expected
+                }, prefix).catch(function () { return false; }).then(function () {
+                  if (!writeJSON('loader_ref_override|' + repoMeta + '|' + file, {
+                    base: baseRef, commit: 'main', sha: expected, at: Date.now()
+                  })) {
+                    fail('更新失败：无法保存版本信息，请清理浏览器存储后重试');
+                    return;
+                  }
+                  writeJSON(updateKey, { at: Date.now(), hash: expected, dismissed: '' });
+                  if (updateText) updateText.textContent = '更新完成，正在重新加载…';
+                  location.reload();
+                });
               });
-              writeJSON(updateKey, { at: Date.now(), hash: expected, dismissed: '' });
-              if (updateText) updateText.textContent = '更新完成，正在重新加载…';
-              location.reload();
             });
           }).catch(function () {
             tryNext();
@@ -306,7 +403,8 @@
           close(true);
         } else {
           err.textContent = '密码错误，未执行更新';
-          input.select();
+          input.value = '';
+          input.focus();
         }
       });
     }

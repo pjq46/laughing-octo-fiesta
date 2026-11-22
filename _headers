@@ -1,5 +1,8 @@
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  X-Frame-Options: SAMEORIGIN
 
-Enter file contents here
 /sw.js
   Cache-Control: no-cache
 
