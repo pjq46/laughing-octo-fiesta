@@ -6,7 +6,7 @@
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=(), bluetooth=()
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Resource-Policy: same-origin
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self' https://gcore.jsdelivr.net https://fastly.jsdelivr.net https://cdn.jsdelivr.net https://raw.githubusercontent.com https://data.jsdelivr.com; frame-src 'self' data: blob:; worker-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self' https://gcore.jsdelivr.net https://fastly.jsdelivr.net https://cdn.jsdelivr.net https://raw.githubusercontent.com https://data.jsdelivr.com; frame-src 'self' data: blob:; worker-src 'self'; object-src 'none'; base-uri 'self' https://gcore.jsdelivr.net https://fastly.jsdelivr.net https://cdn.jsdelivr.net https://raw.githubusercontent.com; form-action 'self'; frame-ancestors 'self'
 
 /sw.js
   Cache-Control: no-cache
