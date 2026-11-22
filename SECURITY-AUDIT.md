@@ -93,7 +93,7 @@ CSP 已允许加载器所需的自有资源、`data:` 字体、`blob:`/`data:` �
 
 ## 验证记录
 
-- 最终仓库提交：`7cb92be`；GitHub Pages workflow #38 成功（20 秒）。
+- 安全代码最终提交：`7cb92be`；GitHub Pages workflow #38 成功（20 秒）。
 - `node --check`：`sw.js`、`update-auth.js`、`gen-game-version.mjs` 通过。
 - 本地根目录 `http://127.0.0.1:8909/`：CSP 不阻断，SW scope `/`，断网重载显示“本地缓存 · 16.1 MB”。
 - 本地子目录 `http://127.0.0.1:8910/project/l8iKyxdA/`：SW scope `/project/l8iKyxdA/`，断网重载正常。

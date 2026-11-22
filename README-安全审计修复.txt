@@ -49,7 +49,7 @@ axxiu：
 
 验证结果
 --------
-- 最终仓库提交：7cb92be（fix: 放行 Cloudflare 统计并修正权限策略）。
+- 安全代码最终提交：7cb92be（fix: 放行 Cloudflare 统计并修正权限策略）；说明文档随后更新。
 - GitHub Pages workflow #38 成功，20 秒完成部署。
 - GitHub Pages 线上：index.html 为 v11 更新脚本，SW v12，CSP 生效，断网重载显示“本地缓存 · 16.1 MB”。
 - Cloudflare 线上：CSP、HSTS、Permissions-Policy、COOP、CORP 响应头已生效，断网重载正常；控制台不再出现 CSP 或 Permissions-Policy 告警。
