@@ -1,61 +1,10 @@
-/* 更新密码校验：密码只以 PBKDF2-SHA256 加盐哈希保存，不存明文。
-   验证通过后才允许加载器执行“更新”动作。 */
+/* 更新脚本：检测新版本、下载、SHA-256 校验并切换版本，不再需要密码。
+   文件名保留 update-auth.js，以兼容现有页面和 Service Worker 的引用。 */
 (function () {
   'use strict';
 
-  var ITERATIONS = 210000;
-  var SALT_B64 = 'BcyYjKvfc7Yjwfudj/JYtQ==';
-  var EXPECT_B64 = 'FdCgYdlI3d8C///v4jU09VZ4abXKzjdWU5iYZrq7w9w=';
   var MAX_GAME_BYTES = 33554432;
   var MAX_MANIFEST_BYTES = 65536;
-  var pendingResolve = null;
-  var checking = false;
-  var ui = null;
-
-  function b64ToBytes(b64) {
-    var raw = atob(b64);
-    var bytes = new Uint8Array(raw.length);
-    for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
-    return bytes;
-  }
-
-  function bytesToB64(bytes) {
-    var raw = '';
-    for (var i = 0; i < bytes.length; i++) raw += String.fromCharCode(bytes[i]);
-    return btoa(raw);
-  }
-
-  function safeEqual(a, b) {
-    if (a.length !== b.length) return false;
-    var diff = 0;
-    for (var i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-    return diff === 0;
-  }
-
-  function verify(password) {
-    if (!password || password.length > 256) return Promise.resolve(false);
-    if (!window.crypto || !window.crypto.subtle) return Promise.resolve(false);
-    var encoder = new TextEncoder();
-    return window.crypto.subtle.importKey(
-      'raw', encoder.encode(password), 'PBKDF2', false, ['deriveBits']
-    ).then(function (key) {
-      return window.crypto.subtle.deriveBits({
-        name: 'PBKDF2',
-        salt: b64ToBytes(SALT_B64),
-        iterations: ITERATIONS,
-        hash: 'SHA-256'
-      }, key, 256);
-    }).then(function (bits) {
-      return safeEqual(bytesToB64(new Uint8Array(bits)), EXPECT_B64);
-    }).catch(function () {
-      return false;
-    });
-  }
-
-
-  function readJSON(key) {
-    try { return JSON.parse(localStorage.getItem(key) || 'null'); } catch (e) { return null; }
-  }
 
   function writeJSON(key, value) {
     try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch (e) { return false; }
@@ -151,14 +100,6 @@
       for (var i = 0; i < raw.length; i++) out += ('0' + raw.charCodeAt(i).toString(16)).slice(-2);
       return out;
     } catch (e) { return ''; }
-  }
-
-  function pickRemoteHash(json, file) {
-    var entries = (json && json.files) || [];
-    for (var i = 0; i < entries.length; i++) {
-      if (String(entries[i].name || '') === '/' + file) return decodeHash(entries[i].hash);
-    }
-    return '';
   }
 
   /* 读取同目录的 game-version.json。该文件由 Pages 部署工作流根据 game.html 重新生成，
@@ -268,7 +209,7 @@
         'https://raw.githubusercontent.com/' + encodedRepo + '/main/' + encodedFile
       ];
 
-      /* 不以本地缓存里的旧哈希作为目标值：先向 jsDelivr 元数据确认当前 main 的真实哈希。
+      /* 不以本地缓存里的旧哈希作为目标值：先向 game-version.json 确认当前 main 的真实哈希。
          这样即使页面上的“发现新版本”提示来自过期缓存，也不会拿旧哈希去校验新文件。 */
       if (updateText) updateText.textContent = '正在确认新版本…';
       fetchRemoteHash(file, 15000).then(function (remoteHash) {
@@ -329,164 +270,36 @@
     });
   }
 
-  function ensureUI() {
-    if (ui) return ui;
-
-    var style = document.createElement('style');
-    style.textContent = [
-      '.pb-auth-mask{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;padding:calc(18px + env(safe-area-inset-top)) 18px calc(18px + env(safe-area-inset-bottom));background:rgba(2,5,12,.78);backdrop-filter:blur(6px);}',
-      '.pb-auth-mask[hidden]{display:none!important;}',
-      '.pb-auth-card{width:min(92vw,420px);box-sizing:border-box;padding:22px 20px;border:1px solid #33466e;border-radius:16px;background:linear-gradient(180deg,#111b30,#0b1222);box-shadow:0 20px 70px rgba(0,0,0,.55);color:#e8eefc;font-family:inherit;}',
-      '.pb-auth-title{font-size:18px;font-weight:700;letter-spacing:.04em;margin-bottom:9px;}',
-      '.pb-auth-desc{font-size:13px;line-height:1.7;color:#9fb0ce;margin-bottom:14px;}',
-      '.pb-auth-input{width:100%;box-sizing:border-box;height:44px;padding:0 13px;border-radius:9px;border:1px solid #3b4f76;background:#080f1d;color:#eef3ff;font-size:16px;outline:none;}',
-      '.pb-auth-input:focus{border-color:#7ca2ff;box-shadow:0 0 0 3px rgba(88,135,255,.18);}',
-      '.pb-auth-err{min-height:20px;padding-top:7px;font-size:12px;color:#ff8e9d;}',
-      '.pb-auth-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:7px;}',
-      '.pb-auth-btn{appearance:none;border:0;border-radius:9px;padding:10px 15px;font-family:inherit;font-size:13px;cursor:pointer;}',
-      '.pb-auth-btn.ghost{background:transparent;border:1px solid #34476c;color:#aab9d6;}',
-      '.pb-auth-btn.primary{background:#7c9dff;color:#071021;font-weight:700;}',
-      '.pb-auth-btn:disabled{opacity:.55;cursor:default;}'
-    ].join('');
-    document.head.appendChild(style);
-
-    var mask = document.createElement('div');
-    mask.className = 'pb-auth-mask';
-    mask.hidden = true;
-    mask.innerHTML = [
-      '<div class="pb-auth-card" role="dialog" aria-modal="true" aria-labelledby="pbAuthTitle">',
-      '<div class="pb-auth-title" id="pbAuthTitle">发现游戏新版本</div>',
-      '<div class="pb-auth-desc">是否更新？请输入更新密码，验证通过后才会下载并替换游戏。</div>',
-      '<input class="pb-auth-input" id="pbAuthInput" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" placeholder="请输入更新密码">',
-      '<div class="pb-auth-err" id="pbAuthErr" role="status"></div>',
-      '<div class="pb-auth-actions">',
-      '<button class="pb-auth-btn ghost" id="pbAuthCancel" type="button">取消</button>',
-      '<button class="pb-auth-btn primary" id="pbAuthOk" type="button">验证并更新</button>',
-      '</div></div>'
-    ].join('');
-    document.body.appendChild(mask);
-
-    var input = mask.querySelector('#pbAuthInput');
-    var err = mask.querySelector('#pbAuthErr');
-    var okBtn = mask.querySelector('#pbAuthOk');
-    var cancelBtn = mask.querySelector('#pbAuthCancel');
-
-    function close(result) {
-      mask.hidden = true;
-      input.value = '';
-      err.textContent = '';
-      okBtn.disabled = false;
-      cancelBtn.disabled = false;
-      checking = false;
-      var done = pendingResolve;
-      pendingResolve = null;
-      if (done) done(result);
-    }
-
-    function submit() {
-      if (checking) return;
-      var password = input.value;
-      if (!password) {
-        err.textContent = '请输入更新密码';
-        input.focus();
-        return;
-      }
-      checking = true;
-      okBtn.disabled = true;
-      cancelBtn.disabled = true;
-      err.textContent = '正在校验…';
-      verify(password).then(function (ok) {
-        checking = false;
-        okBtn.disabled = false;
-        cancelBtn.disabled = false;
-        if (ok) {
-          close(true);
-        } else {
-          err.textContent = '密码错误，未执行更新';
-          input.value = '';
-          input.focus();
-        }
-      });
-    }
-
-    okBtn.addEventListener('click', submit);
-    cancelBtn.addEventListener('click', function () { close(false); });
-    input.addEventListener('keydown', function (event) {
-      if (event.key === 'Enter') {
-        event.preventDefault();
-        submit();
-      } else if (event.key === 'Escape') {
-        event.preventDefault();
-        close(false);
-      }
-    });
-    mask.addEventListener('click', function (event) {
-      if (event.target === mask) close(false);
-    });
-
-    ui = { mask: mask, input: input, err: err, okBtn: okBtn, cancelBtn: cancelBtn };
-    return ui;
-  }
-
-  function ask() {
-    if (pendingResolve) return Promise.resolve(false);
-    var view = ensureUI();
-    view.input.value = '';
-    view.err.textContent = '';
-    view.okBtn.disabled = false;
-    view.cancelBtn.disabled = false;
-    view.mask.hidden = false;
-    return new Promise(function (resolve) {
-      pendingResolve = resolve;
-      setTimeout(function () { view.input.focus(); }, 60);
-    });
-  }
-
-  function installGate() {
+  /* 更新按钮：直接执行，不再弹密码框。脚本缺失时按钮保持 disabled，避免误触。 */
+  function installUpdate() {
     var updateButton = document.getElementById('updYes');
     if (!updateButton) return;
-
-    /* update-auth.js 加载成功后才放行“更新”按钮；若脚本缺失，按钮保持禁用。 */
     updateButton.disabled = false;
     var running = false;
     updateButton.addEventListener('click', function (event) {
       event.preventDefault();
       event.stopImmediatePropagation();
       if (running) return;
-      var updateText = document.getElementById('updText');
+      running = true;
+      updateButton.disabled = true;
       var ignoreButton = document.getElementById('updNo');
-      if (updateText) updateText.textContent = '检测到新版本，请输入密码后更新';
-      ask().then(function (ok) {
-        if (!ok) {
-          if (updateText) updateText.textContent = '已取消更新';
-          return;
+      var updateText = document.getElementById('updText');
+      if (ignoreButton) ignoreButton.disabled = true;
+      if (updateText) updateText.textContent = '正在准备更新…';
+      runUpdate().then(function (success) {
+        running = false;
+        updateButton.disabled = false;
+        if (ignoreButton) ignoreButton.disabled = false;
+        if (!success && updateText && updateText.textContent === '正在准备更新…') {
+          updateText.textContent = '更新未完成';
         }
-        running = true;
-        updateButton.disabled = true;
-        if (ignoreButton) ignoreButton.disabled = true;
-        runUpdate().then(function (success) {
-          running = false;
-          if (success && updateButton) updateButton.disabled = false;
-        });
       });
     }, true);
   }
 
-  /* 只暴露弹窗入口，不把 verify 暴露给页面内其他脚本，避免形成离线密码校验预言机。
-     注意：前端密码门只能提高误操作门槛，不能替代服务端或签名校验。 */
-  try {
-    Object.defineProperty(window, 'UpdateAuth', {
-      value: Object.freeze({ ask: ask }),
-      writable: false,
-      configurable: false
-    });
-  } catch (e) {
-    window.UpdateAuth = Object.freeze({ ask: ask });
-  }
-
   if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', installGate);
+    document.addEventListener('DOMContentLoaded', installUpdate);
   } else {
-    installGate();
+    installUpdate();
   }
 })();

@@ -1,13 +1,13 @@
 /* 游戏加载器 Service Worker：固定 commit 资源缓存优先，导航离线兜底。
-   同时预缓存 update-auth.js，保证更新密码校验脚本可用。
+   同时预缓存更新脚本（update-auth.js，历史文件名，已无密码门禁）。
    部署位置：与 index.html 同目录（GitHub Pages 项目站为仓库根目录）。 */
-var VERSION = 'game-loader-sw-v12';
+var VERSION = 'game-loader-sw-v13';
 var CACHE_PREFIX = 'game-loader-sw-';
 var SCOPE = self.registration.scope;
 var INDEX_URL = new URL('index.html', SCOPE).href;
 var PAGE404_URL = new URL('404.html', SCOPE).href;
-var AUTH_URL = new URL('update-auth.js?v=11', SCOPE).href;
-var CORE_ASSETS = [INDEX_URL, PAGE404_URL, AUTH_URL];
+var UPDATE_URL = new URL('update-auth.js?v=12', SCOPE).href;
+var CORE_ASSETS = [INDEX_URL, PAGE404_URL, UPDATE_URL];
 
 self.addEventListener('install', function (event) {
   event.waitUntil(
@@ -85,7 +85,7 @@ self.addEventListener('fetch', function (event) {
 
   var url = new URL(request.url);
   if (url.origin === self.location.origin && url.pathname.endsWith('/update-auth.js')) {
-    // 密码校验脚本：联网时取最新并刷新缓存，断网时回退到最近缓存。
+    // 更新脚本：联网时取最新并刷新缓存，断网时回退到最近缓存。
     event.respondWith(networkFirst(request));
     return;
   }
