@@ -4,8 +4,8 @@
   'use strict';
 
   var ITERATIONS = 210000;
-  var SALT_B64 = '0AN7oqzlsHBAf2CfK6dp2A==';
-  var EXPECT_B64 = 'riArXcWTft1/39+/PAuVUO4XReTnZQ/o8Qq2zkayYOA=';
+  var SALT_B64 = 'BcyYjKvfc7Yjwfudj/JYtQ==';
+  var EXPECT_B64 = 'FdCgYdlI3d8C///v4jU09VZ4abXKzjdWU5iYZrq7w9w=';
   var pendingResolve = null;
   var checking = false;
   var ui = null;
