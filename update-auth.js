@@ -298,7 +298,7 @@
             return digest(buffer).then(function (hash) {
               if (hash !== expected) throw new Error('SHA-256 不一致');
               var key = 'page|' + location.origin + '|' + encodedRepo + '@main|' + file + '|' + expected;
-              var prefix = 'page|' + location.origin + '|' + encodedRepo + '@';
+              var prefix = 'page|' + location.origin + '|' + encodedRepo + '@main|' + file + '|';
               return new Blob([buffer]).text().then(function (html) {
                 return cacheGame({
                   key: key,
@@ -357,7 +357,7 @@
       '<div class="pb-auth-card" role="dialog" aria-modal="true" aria-labelledby="pbAuthTitle">',
       '<div class="pb-auth-title" id="pbAuthTitle">发现游戏新版本</div>',
       '<div class="pb-auth-desc">是否更新？请输入更新密码，验证通过后才会下载并替换游戏。</div>',
-      '<input class="pb-auth-input" id="pbAuthInput" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="请输入更新密码">',
+      '<input class="pb-auth-input" id="pbAuthInput" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" placeholder="请输入更新密码">',
       '<div class="pb-auth-err" id="pbAuthErr" role="status"></div>',
       '<div class="pb-auth-actions">',
       '<button class="pb-auth-btn ghost" id="pbAuthCancel" type="button">取消</button>',
@@ -472,7 +472,17 @@
     }, true);
   }
 
-  window.UpdateAuth = { ask: ask, verify: verify };
+  /* 只暴露弹窗入口，不把 verify 暴露给页面内其他脚本，避免形成离线密码校验预言机。
+     注意：前端密码门只能提高误操作门槛，不能替代服务端或签名校验。 */
+  try {
+    Object.defineProperty(window, 'UpdateAuth', {
+      value: Object.freeze({ ask: ask }),
+      writable: false,
+      configurable: false
+    });
+  } catch (e) {
+    window.UpdateAuth = Object.freeze({ ask: ask });
+  }
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', installGate);
