@@ -62,6 +62,13 @@ CSP 已允许加载器所需的自有资源、`data:` 字体、`blob:`/`data:` �
 
 修复：全部固定到具体 commit SHA；部署 job 的 checkout 关闭持久化凭据（`persist-credentials: false`），并给两个 workflow 增加超时与版本清单并发锁。
 
+### 7. 生产环境兼容修正（非漏洞）
+
+首次上线 CSP 后，生产控制台发现两处兼容报错，已一并修复：
+
+- `base-uri 'self'` 会拦截加载器为游戏注入的 CDN `<base>`。已将 `base-uri` 放宽到加载器实际使用的四个源：gcore/fastly/cdn.jsDelivr 与 raw.githubusercontent.com。
+- CSP 会拦截 Cloudflare 自动注入的 Web Analytics 脚本。已在 `script-src` 与 `connect-src` 放行 `static.cloudflareinsights.com` 和 `cloudflareinsights.com`，同时移除浏览器不识别的 `bluetooth` 权限项。
+
 ## 仍需注意的信任模型
 
 ### 前端更新密码不是服务端权限
@@ -86,10 +93,13 @@ CSP 已允许加载器所需的自有资源、`data:` 字体、`blob:`/`data:` �
 
 ## 验证记录
 
+- 最终仓库提交：`7cb92be`；GitHub Pages workflow #38 成功（20 秒）。
 - `node --check`：`sw.js`、`update-auth.js`、`gen-game-version.mjs` 通过。
 - 本地根目录 `http://127.0.0.1:8909/`：CSP 不阻断，SW scope `/`，断网重载显示“本地缓存 · 16.1 MB”。
 - 本地子目录 `http://127.0.0.1:8910/project/l8iKyxdA/`：SW scope `/project/l8iKyxdA/`，断网重载正常。
+- 本地 CDN 线路：`<base>` 指向 gcore.jsDelivr，CSP 允许，游戏正常载入。
 - 缓存隔离测试：预置 `other-app-cache` 与 `game-loader-sw-v11`，新 SW 激活后 `other-app-cache` 保留，`game-loader-sw-v11` 删除，`game-loader-sw-v12` 生成。
 - IndexedDB 隔离测试：预置同仓库 `other.html` 缓存键，加载器写入 `game.html` 缓存后该键仍保留。
 - 密码弹窗：`UpdateAuth` 仅有 `ask`，`verify` 为 `undefined`；弹窗可打开并取消。
+- Cloudflare 线上响应头：CSP、HSTS、Permissions-Policy、COOP、CORP、nosniff 均已返回；断网重载正常。
 - `game.html` 哈希未变，未上传/修改游戏本体。
