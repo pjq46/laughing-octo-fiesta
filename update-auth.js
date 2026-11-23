@@ -1,4 +1,5 @@
 /* 更新脚本：检测新版本、下载、SHA-256 校验并切换版本，不再需要密码。
+   同时维护 loader_hash_state：记录当前 HTML 目标和上一版哈希，供缓存三态判断。
    文件名保留 update-auth.js，以兼容现有页面和 Service Worker 的引用。 */
 (function () {
   'use strict';
@@ -10,9 +11,29 @@
     try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch (e) { return false; }
   }
 
+  function readJSON(key) {
+    try {
+      var value = localStorage.getItem(key);
+      return value ? JSON.parse(value) : null;
+    } catch (e) { return null; }
+  }
+
   function meta(name) {
     var el = document.querySelector('meta[name="' + name + '"]');
     return el ? (el.getAttribute('content') || '') : '';
+  }
+
+  function validFile(value) {
+    var text = String(value || '');
+    return text.length <= 200
+      && /^[A-Za-z0-9._\-\/]+$/.test(text)
+      && text.split('/').every(function (part) { return part && part !== '.' && part !== '..'; });
+  }
+
+  function validRepo(value) {
+    var text = String(value || '');
+    return text.length <= 200
+      && /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:@[A-Za-z0-9._-]{1,40})?$/.test(text);
   }
 
   function encodePath(path) {
@@ -160,7 +181,7 @@
           keys.onsuccess = function () {
             (keys.result || []).forEach(function (key) {
               var text = String(key);
-              if (text.indexOf(prefix) === 0 && text !== record.key) store.delete(text);
+              if ((text === prefix || text.indexOf(prefix + '|') === 0) && text !== record.key) store.delete(text);
             });
           };
           tx.oncomplete = function () { db.close(); resolve(true); };
@@ -189,17 +210,25 @@
         resolve(false);
       }
 
-      if (!repoMeta || !file) {
-        fail('更新失败：缺少仓库配置');
+      if (!repoMeta || !file || !validRepo(repoMeta) || !validFile(file)) {
+        fail('更新失败：仓库或文件名不合法');
         return;
       }
 
       var at = repoMeta.lastIndexOf('@');
       var repoPath = at < 0 ? repoMeta : repoMeta.slice(0, at);
       var metaRef = at < 0 ? 'main' : (repoMeta.slice(at + 1) || 'main');
-      var baseRef = /^[0-9a-f]{7,40}$/i.test(metaRef) ? metaRef : (metaRef || 'main');
+      if (metaRef && metaRef !== 'main' && !/^[0-9a-f]{7,40}$/i.test(metaRef)) {
+        fail('更新失败：分支配置不合法');
+        return;
+      }
+      var baseRef = /^[0-9a-f]{7,40}$/i.test(metaRef) ? metaRef : 'main';
       var updateKey = 'loader_update_check|' + repoMeta + '|' + file;
       var metaHash = String(meta('game-sha256') || '').toLowerCase();
+      if (!/^[0-9a-f]{64}$/.test(metaHash)) {
+        fail('更新失败：页面哈希无效');
+        return;
+      }
       var encodedRepo = encodePath(repoPath);
       var encodedFile = encodePath(file);
       var urls = [
@@ -217,14 +246,6 @@
           fail('更新失败：无法获取新版本校验值，请稍后再试');
           return;
         }
-        if (remoteHash === metaHash) {
-          var bar = document.getElementById('updBar');
-          writeJSON(updateKey, { at: Date.now(), hash: remoteHash, dismissed: remoteHash });
-          if (bar) bar.hidden = true;
-          fail('当前已是最新版本，无需更新');
-          return;
-        }
-
         var expected = remoteHash;
         var index = 0;
 
@@ -238,8 +259,8 @@
           download(currentUrl, 75000).then(function (buffer) {
             return digest(buffer).then(function (hash) {
               if (hash !== expected) throw new Error('SHA-256 不一致');
-              var key = 'page|' + location.origin + '|' + encodedRepo + '@main|' + file + '|' + expected;
-              var prefix = 'page|' + location.origin + '|' + encodedRepo + '@main|' + file + '|';
+              var key = 'page|' + location.origin + '|' + encodedRepo + '@main|' + file;
+              var prefix = key;
               return new Blob([buffer]).text().then(function (html) {
                 return cacheGame({
                   key: key,
@@ -249,6 +270,12 @@
                   digest: expected
                 }, prefix).catch(function () { return false; }).then(function () {
                   /* 更新成功后写入当前浏览器的本地覆盖；第二种模式同时由工作流同步 index/404 的哈希。 */
+                  var hashStateKey = 'loader_hash_state|' + repoMeta + '|' + file;
+                  var hashState = readJSON(hashStateKey) || {};
+                  var oldHash = /^[0-9a-f]{64}$/i.test(hashState.prev || '') && hashState.prev !== expected
+                    ? hashState.prev
+                    : (/^[0-9a-f]{64}$/i.test(metaHash) && metaHash !== expected ? metaHash : '');
+                  writeJSON(hashStateKey, { target: expected, prev: oldHash, at: Date.now() });
                   if (!writeJSON('loader_ref_override|' + repoMeta + '|' + file, {
                     base: baseRef, commit: 'main', sha: expected, at: Date.now()
                   })) {

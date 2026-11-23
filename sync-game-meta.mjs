@@ -1,10 +1,17 @@
 import { createHash } from 'node:crypto';
 import { readFile, writeFile } from 'node:fs/promises';
 
-const GAME_FILE = process.argv[2] || 'game.html';
+const GAME_FILE = String(process.argv[2] || 'game.html').replace(/^\/+/, '');
+if (
+  GAME_FILE.length > 200
+  || !/^[A-Za-z0-9._\-\/]+$/.test(GAME_FILE)
+  || GAME_FILE.split('/').some((part) => !part || part === '.' || part === '..')
+) {
+  throw new Error('game.html 路径不合法');
+}
 const META_FILES = ['index.html', '404.html'];
 const MANIFEST = 'game-version.json';
-const REPO_REF = process.env.GAME_REF || 'main';
+const REPO_REF = String(process.env.GAME_REF || 'main').replace(/[^A-Za-z0-9._-]/g, '') || 'main';
 
 const bytes = await readFile(GAME_FILE);
 const sha256 = createHash('sha256').update(bytes).digest('hex');
