@@ -1,4 +1,4 @@
-name: Update game version manifest
+name: Sync game version and loader refs
 
 on:
   push:
@@ -10,27 +10,28 @@ permissions:
   contents: write
 
 concurrency:
-  group: game-version-manifest
+  group: game-version-sync
   cancel-in-progress: false
 
 jobs:
-  update:
+  sync:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
 
-      - name: Generate version manifest
-        run: |
-          sha=$(sha256sum game.html | awk '{print $1}')
-          size=$(stat -c%s game.html)
-          printf '{"file":"game.html","sha256":"%s","size":%s,"updated":"%s"}\n' "$sha" "$size" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > game-version.json
+      - name: Sync manifest and loader meta
+        env:
+          BUMP_SW: '1'
+        run: node sync-game-meta.mjs
 
-      - name: Commit manifest
+      - name: Commit changes
         run: |
-          git add game-version.json
+          git add game-version.json index.html 404.html sw.js
           if git diff --cached --quiet; then exit 0; fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit -m "chore: update game-version.json"
+          git commit -m "chore: sync game version and loader refs"
           git push
