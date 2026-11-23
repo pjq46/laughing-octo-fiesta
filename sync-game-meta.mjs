@@ -38,12 +38,13 @@ const indexHtml = await readFile('index.html', 'utf8');
 const repoMatch = indexHtml.match(/<meta\s+name="game-repo"\s+content="([^"]+)"/);
 if (!repoMatch) throw new Error('index.html 缺少 game-repo');
 const repo = repoMatch[1].split('@')[0];
+if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo)) throw new Error('game-repo 格式不合法');
 const repoMeta = `${repo}@${REPO_REF}`;
 
 function setMeta(html, name, value) {
   const re = new RegExp(`(<meta\\s+name=["']${name}["']\\s+content=["'])([^"']*)(["'])`, 'i');
   if (!re.test(html)) throw new Error(`缺少 meta: ${name}`);
-  return html.replace(re, `$1${value}$3`);
+  return html.replace(re, (_, prefix, _old, quote) => prefix + value + quote);
 }
 
 for (const file of META_FILES) {
