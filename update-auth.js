@@ -248,6 +248,7 @@
                   savedAt: Date.now(),
                   digest: expected
                 }, prefix).catch(function () { return false; }).then(function () {
+                  /* 更新成功后写入当前浏览器的本地覆盖；第二种模式同时由工作流同步 index/404 的哈希。 */
                   if (!writeJSON('loader_ref_override|' + repoMeta + '|' + file, {
                     base: baseRef, commit: 'main', sha: expected, at: Date.now()
                   })) {

@@ -10,7 +10,7 @@
 
 `95dee6751dbdc375d693cd1f649834c6bcf8263492d5f1398584e97cf7597e03`
 
-v12 修复了 2 个会在真实部署中造成损坏的问题、3 个安全加固项和 1 个供应链加固项；v13 按需求移除更新密码门禁，保留其余修复。
+v12 修复了 2 个会在真实部署中造成损坏的问题、3 个安全加固项和 1 个供应链加固项；v13 按需求移除更新密码门禁；v14 增加“自动同步两个 HTML 哈希”的第二种更新模式。
 
 ## v13 变更：移除更新密码门禁
 
@@ -25,6 +25,14 @@ v12 修复了 2 个会在真实部署中造成损坏的问题、3 个安全加�
 更新按钮现在直接调用 `runUpdate()`：从仓库 `main` 下载 `game.html`，用 `game-version.json` 的 SHA-256 校验，写入 IndexedDB 和 `loader_ref_override`，然后重载。`update-auth.js` 这个文件名仅为兼容现有页面和 SW 引用而保留，内部已无密码门禁。
 
 影响：任何能打开页面的人都可以触发更新。SHA-256 校验只能保证下载内容与清单一致，不是身份认证。
+
+## v14 变更：自动同步两个 HTML 的哈希（第二种）
+
+本包改用“全量自动同步”模式：`index.html` / `404.html` 的 `game-repo` 指向 `pjq46/laughing-octo-fiesta@main`，`game-sha256` 指向当前 `game.html`。
+
+新增 `sync-game-meta.mjs`：计算 `game.html` 的 SHA-256 和大小，写 `game-version.json`，并同步改写两个 HTML 的 `game-repo` / `game-sha256`。`game-version.yml` 在 `game.html` 推送后自动运行并提交；`static.yml` 在部署前也运行一次，保证构建产物中的哈希与游戏文件一致。
+
+该模式让所有新访客直接加载新版，不依赖访客点击“更新”。工作流拥有 `contents: write` 权限，仓库写权限即发布权限，需要保护分支和 Actions 权限。工作流当前未提交、未线上运行；脚本已本地测试。
 
 ## 保留的修复
 

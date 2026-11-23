@@ -1,12 +1,12 @@
 /* 游戏加载器 Service Worker：固定 commit 资源缓存优先，导航离线兜底。
    同时预缓存更新脚本（update-auth.js，历史文件名，已无密码门禁）。
    部署位置：与 index.html 同目录（GitHub Pages 项目站为仓库根目录）。 */
-var VERSION = 'game-loader-sw-v13';
+var VERSION = 'game-loader-sw-v14';
 var CACHE_PREFIX = 'game-loader-sw-';
 var SCOPE = self.registration.scope;
 var INDEX_URL = new URL('index.html', SCOPE).href;
 var PAGE404_URL = new URL('404.html', SCOPE).href;
-var UPDATE_URL = new URL('update-auth.js?v=12', SCOPE).href;
+var UPDATE_URL = new URL('update-auth.js?v=13', SCOPE).href;
 var CORE_ASSETS = [INDEX_URL, PAGE404_URL, UPDATE_URL];
 
 self.addEventListener('install', function (event) {
