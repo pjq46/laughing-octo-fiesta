@@ -51,6 +51,7 @@ for (const file of META_FILES) {
   let html = await readFile(file, 'utf8');
   html = setMeta(html, 'game-repo', repoMeta);
   html = setMeta(html, 'game-sha256', sha256);
+  html = setMeta(html, 'game-size', String(bytes.length));
   await writeFile(file, html);
 }
 
