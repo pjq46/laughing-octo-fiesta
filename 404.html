@@ -864,48 +864,7 @@
             }, 900));
         } else ue(W.saveMsg, "没有可用备份");
       }));
-  var Te = "loader_update_check|" + r + "|" + n,
-    Ce = 216e5;
-  function Se(e) {
-    var t = String((e && e.sha256) || "")
-      .trim()
-      .toLowerCase();
-    return /^[0-9a-f]{64}$/.test(t) ? t : "";
-  }
-  function De() {
-    if (
-      B &&
-      !E &&
-      x &&
-      ("boolean" != typeof navigator.onLine || navigator.onLine)
-    ) {
-      var t =
-          "undefined" != typeof AbortController ? new AbortController() : null,
-        n = { cache: "no-store" };
-      (t &&
-        ((n.signal = t.signal),
-        setTimeout(function () {
-          t.abort("timeout");
-        }, 12e3)),
-        fetch("game-version.json?ts=" + Date.now(), n)
-          .then(function (e) {
-            return e.ok
-              ? e.text().then(function (t) {
-                  if (t.length > 65536) throw new Error("版本清单过大");
-                  return JSON.parse(t);
-                })
-              : null;
-          })
-          .then(function (e) {
-            var t = Se(e);
-            if (!t) return;
-            var n = y(Te) || {};
-            (b(Te, { at: Date.now(), hash: t, dismissed: n.dismissed || "" }),
-              t !== o && n.dismissed !== t && Me(t));
-          })
-          .catch(function () {}));
-    }
-  }
+  var Te = "loader_update_check|" + r + "|" + n;
   function Me(e) {
     W.updBar &&
       (ue(W.updText, "发现游戏新版本"),
