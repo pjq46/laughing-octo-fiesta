@@ -1,3 +1,7 @@
+# 生效的响应头（Cloudflare Pages / Netlify 的 _headers 语法）。
+# GitHub Pages 会忽略本文件；那里的安全头与缓存语义由页内 CSP 和 Service Worker 保证。
+# 想真正强制 HTTPS，只能走自定义域名 + Cloudflare 的 Always Use HTTPS / HSTS。
+
 /*
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
@@ -6,12 +10,19 @@
   Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=(), usb=(), serial=(), hid=()
   Cross-Origin-Opener-Policy: same-origin
   Cross-Origin-Resource-Policy: same-origin
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self' https://gcore.jsdelivr.net https://fastly.jsdelivr.net https://cdn.jsdelivr.net https://raw.githubusercontent.com https://data.jsdelivr.com https://cloudflareinsights.com https://static.cloudflareinsights.com; frame-src 'self' data: blob:; worker-src 'self'; object-src 'none'; base-uri 'self' https://gcore.jsdelivr.net https://fastly.jsdelivr.net https://cdn.jsdelivr.net https://raw.githubusercontent.com; form-action 'self'; frame-ancestors 'self'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com https://913ban.cc.cd; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob:; media-src 'self' data: blob:; connect-src 'self' https://gcore.jsdelivr.net https://fastly.jsdelivr.net https://cdn.jsdelivr.net https://raw.githubusercontent.com https://data.jsdelivr.com https://cloudflareinsights.com https://static.cloudflareinsights.com https://913ban.cc.cd; frame-src 'self' data: blob:; worker-src 'self'; object-src 'none'; base-uri 'self' https://gcore.jsdelivr.net https://fastly.jsdelivr.net https://cdn.jsdelivr.net https://raw.githubusercontent.com; form-action 'self'
 
-/sw.js
+# 加载器本体与入口页：每次回源校验，避免旧加载器把玩家留在旧版本。
+/loader.js
+  Cache-Control: no-cache
+
+/loader.css
   Cache-Control: no-cache
 
 /update-auth.js
+  Cache-Control: no-cache
+
+/sw.js
   Cache-Control: no-cache
 
 /index.html
@@ -20,5 +31,10 @@
 /404.html
   Cache-Control: no-cache
 
+# 游戏本体体积大、但被 meta 里的 SHA-256 锁定，允许保留副本并回源校验。
+/game.html
+  Cache-Control: no-cache
+
+# 版本清单只用于比对，不允许任何中间层缓存。
 /game-version.json
   Cache-Control: no-store
