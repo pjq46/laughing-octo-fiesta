@@ -29,6 +29,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Validate loader assets
+        run: node validate.mjs
+
       - name: Sync game version and loader meta
         run: node sync-game-meta.mjs
 
