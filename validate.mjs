@@ -25,21 +25,28 @@ for (const page of pages) {
   if (!exists(page)) { fail(`${page} 不存在`); continue; }
   const html = read(page);
 
-  const inlineScript = /<script(?![^>]*\bsrc=)[^>]*>[^<]*<\/script>/i.exec(html);
-  if (inlineScript) fail(`${page} 仍含内联脚本，应放在 loader.js 里`);
+  /* 单文件入口页：loader.css / loader.js / update-auth.js 必须内联进 HTML，
+     不能再出现外链，也不允许页面与源文件内容漂移。 */
+  if (!/<style>/.test(html)) fail(`${page} 缺少内联样式块`);
+  if (/<link[^>]+href="loader\.css"/i.test(html)) fail(`${page} 不应再外链 loader.css`);
+  if (/<script[^>]+src="loader\.js"/i.test(html)) fail(`${page} 不应再外链 loader.js`);
+  if (/<script[^>]+src="update-auth\.js/i.test(html)) fail(`${page} 不应再外链 update-auth.js`);
 
-  if (/<style\b/i.test(html)) fail(`${page} 仍含内联样式，应放在 loader.css 里`);
-
-  if (exists('loader.css') && !/\.site-link\{/.test(read('loader.css')))
-    fail('loader.css 缺少 .site-link 样式（官网入口会掉在角落）');
-
-  for (const asset of ['loader.js', 'loader.css']) {
-    if (!new RegExp(`(src|href)="${asset}"`).test(html)) fail(`${page} 未引用 ${asset}`);
-    if (!exists(asset)) fail(`${asset} 不存在`);
+  for (const asset of ['loader.css', 'loader.js', 'update-auth.js']) {
+    if (!exists(asset)) fail(`${asset} 不存在（单文件页由这些源文件内联生成）`);
   }
 
-  if (!/<script[^>]*\bdefer[^>]*src="loader\.js"/i.test(html)) fail(`${page} 的 loader.js 未使用 defer`);
-  if (!/<script[^>]*\bdefer[^>]*src="update-auth\.js/i.test(html)) fail(`${page} 的 update-auth.js 未使用 defer`);
+  const css = exists('loader.css') ? read('loader.css') : '';
+  if (!/\.site-link\{/.test(css)) fail('loader.css 缺少 .site-link 样式（官网入口会掉在角落）');
+  if (css && !html.includes(css)) fail(`${page} 的内联样式与 loader.css 不一致`);
+
+  const js = exists('loader.js') ? read('loader.js') : '';
+  if (!/loader_update_check/.test(js)) fail('loader.js 缺少更新检测逻辑（三态提示会失效）');
+  if (js && !html.includes(js)) fail(`${page} 的内联脚本与 loader.js 不一致`);
+
+  const auth = exists('update-auth.js') ? read('update-auth.js') : '';
+  if (!/loader_hash_state/.test(auth)) fail('update-auth.js 未记录 loader_hash_state');
+  if (auth && !html.includes(auth)) fail(`${page} 的内联脚本与 update-auth.js 不一致`);
 
   const meta = (name) => {
     const m = new RegExp(`<meta name="${name}" content="([^"]*)"`, 'i').exec(html);
