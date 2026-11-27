@@ -51,17 +51,40 @@ for (const page of pages) {
   if (!/<meta http-equiv="Content-Security-Policy"/i.test(html)) fail(`${page} 缺少 CSP meta`);
   if (!/frame-src 'self' data: blob:/i.test(html)) fail(`${page} CSP 的 frame-src 不允许 srcdoc 游戏`);
 
-  /* 加载器页面的 CSP 需要 'unsafe-inline'：游戏通过 iframe srcdoc 注入，
-     srcdoc 文档继承父页面 CSP，游戏自带内联脚本与样式。 */
-  if (!/script-src[^;]*'unsafe-inline'/.test(html)) warn(`${page} CSP 未允许 unsafe-inline（srcdoc 游戏可能不渲染）`);
-  if (/script-src[^;]*'unsafe-eval'/.test(html)) fail(`${page} CSP 不应允许 unsafe-eval`);
+  /* 加载器页面的 CSP 必须保留 'unsafe-inline'：游戏通过 iframe srcdoc 注入，
+     srcdoc 文档继承父页面 CSP，游戏自带内联脚本与样式；去掉后游戏只剩无样式按钮列表。
+     这条是硬性失败，避免有人把严格 CSP 当成“更安全”的默认值提交。 */
+  if (!/script-src[^;]*'unsafe-inline'/.test(html))
+    fail(`${page} CSP 缺少 script-src 'unsafe-inline'，srcdoc 注入的游戏会因内联脚本被拦而无法运行`);
+  if (!/style-src[^;]*'unsafe-inline'/.test(html))
+    fail(`${page} CSP 缺少 style-src 'unsafe-inline'，srcdoc 注入的游戏会丢失全部样式`);
+  if (/script-src[^;]*'unsafe-eval'/.test(html)) fail(`${page} CSP 不应允许 'unsafe-eval'`);
 }
 
 const index = exists('index.html') ? read('index.html') : '';
 const page404 = exists('404.html') ? read('404.html') : '';
 if (index && page404 && index !== page404) fail('index.html 与 404.html 内容不一致');
 
-/* ---------- 2. CSP 与 _headers 一致 ---------- */
+/* ---------- 2. 构建脚本可复现性 ----------
+   入口页必须能只依赖仓库内文件重建：build-loader-page.py --check 会按当前
+   game-version.json 生成页面并与 index.html / 404.html 逐字比对。
+   若脚本仍依赖仓库里不存在的 baseline（例如 index.pre-opt.html），这里会直接失败。 */
+if (!exists('build-loader-page.py')) {
+  warn('build-loader-page.py 不存在，跳过可复现性校验');
+} else {
+  try {
+    const out = execFileSync('python3', [join(ROOT, 'build-loader-page.py'), '--check'], {
+      cwd: ROOT, stdio: 'pipe', timeout: 30000,
+    }).toString().trim();
+    if (out) console.log(`[info] ${out}`);
+  } catch (e) {
+    const msg = (e.stderr || e.stdout || e.message).toString().trim();
+    if (e.code === 'ENOENT') warn('环境缺少 python3，跳过构建脚本可复现性校验');
+    else fail(`构建脚本无法从仓库内文件重建页面：${msg.split('\n').slice(0, 3).join(' ')}`);
+  }
+}
+
+/* ---------- 3. CSP 与 _headers 一致 ---------- */
 if (exists('_headers')) {
   const headers = read('_headers');
   const metaCsp = (/Content-Security-Policy" content="([^"]*)"/i.exec(index) || [])[1] || '';
