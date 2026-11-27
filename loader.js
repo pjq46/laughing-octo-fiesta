@@ -444,6 +444,7 @@
     "updText",
     "updYes",
     "updNo",
+    "checkUpd",
   ].forEach(function (e) {
     W[e] = document.getElementById(e);
   }),
@@ -962,6 +963,41 @@
         ((t.hash = e), (t.dismissed = e), b(Te, t), (W.updBar.hidden = !0));
       }));
   }
+  /* 手动更新入口：放在“存档那一栏”。忽略只按版本哈希记录，这里点击会清掉忽略，
+     先比对远端清单与本地缓存，已最新就提示，否则直接走更新（下载→校验→重载）。 */
+  function CheckUpdate() {
+    var btn = W.checkUpd;
+    if (!btn || btn.disabled) return;
+    btn.disabled = !0;
+    var t = y(Te) || {};
+    ((t.dismissed = ""), b(Te, t));
+    W.updBar && (ue(W.updText, "正在检查更新…"), (W.updBar.hidden = !1));
+    W.updYes && (W.updYes.onclick = null);
+    W.updNo && (W.updNo.onclick = function () { W.updBar.hidden = !0; });
+    function settle(msg) {
+      ue(W.updText, msg);
+      btn.disabled = !1;
+      setTimeout(function () { W.updBar && (W.updBar.hidden = !0); }, 5e3);
+    }
+    var hook = window.__loaderUpdate;
+    if (!hook || typeof hook.remoteHash !== "function") {
+      settle("更新模块未就绪，请刷新后重试");
+      return;
+    }
+    hook.remoteHash().then(function (remote) {
+      K().then(function (rec) {
+        var cached = String((rec && rec.digest) || "").toLowerCase();
+        if (remote && cached && remote === cached) { settle("已是最新版本"); return; }
+        W.updBar && (W.updBar.hidden = !1);
+        ue(W.updText, "发现新版本，开始更新…");
+        var p = hook.run ? hook.run() : null;
+        (p && p.then ? p : Promise.resolve(!1)).then(function (ok) {
+          if (!ok) { btn.disabled = !1; ue(W.updText, "更新未完成，请稍后重试"); }
+        });
+      }, function () { settle("读取本地缓存失败"); });
+    }, function () { settle("检查更新失败，请重试"); });
+  }
+  W.checkUpd && (W.checkUpd.onclick = CheckUpdate);
   var je = !1;
   /* 首连对冲等待：第一条线路 7 秒内没建立连接才开第二条（原先 5 秒偏激进）。 */
   var Ee = 7e3;

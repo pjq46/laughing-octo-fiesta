@@ -6,6 +6,7 @@
 
   var MAX_GAME_BYTES = 33554432;
   var MAX_MANIFEST_BYTES = 65536;
+  var FILE = (meta('game-file') || 'game.html').replace(/^\/+/, '');
 
   function writeJSON(key, value) {
     try { localStorage.setItem(key, JSON.stringify(value)); return true; } catch (e) { return false; }
@@ -326,6 +327,13 @@
       });
     }, true);
   }
+
+  /* 供加载器里的“检查更新”按钮复用：同一套清单读取、下载、校验与重载逻辑。 */
+  window.__loaderUpdate = {
+    remoteHash: function () { return fetchRemoteHash(FILE, 15000); },
+    run: runUpdate,
+    current: function () { return decodeHash(meta('game-sha256')); }
+  };
 
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', installUpdate);
