@@ -55,16 +55,43 @@
     g.base === m &&
     /^[0-9a-f]{7,40}$/i.test(m) &&
     ((l = g.commit), (o = g.sha), (w = !0), (i = !1));
-  var HsKey = "loader_hash_state|" + r + "|" + n;
+  /* 缓存与版本状态的命名空间只用仓库路径，不带 ref（ref 每次部署都会变成提交号，
+     带 ref 会导致缓存与“上一版”状态对不上，三态更新提示就永远不会出现）。 */
+  var xBase = s && c ? encodeURIComponent(s) + "/" + encodeURIComponent(c) : "";
+  var HsKey = "loader_hash_state|" + xBase + "|" + n;
   function HsRead() {
-    var h = y(HsKey) || {},
-      t = /^[0-9a-f]{64}$/i.test(h.target || "")
-        ? String(h.target).toLowerCase()
-        : "",
-      p = /^[0-9a-f]{64}$/i.test(h.prev || "")
-        ? String(h.prev).toLowerCase()
-        : "";
-    return { target: t, prev: p, at: Number(h.at) || 0 };
+    var raw = y(HsKey), h, ht = "", hp = "";
+    if (!raw && xBase) {
+      /* 兼容旧版 key（带 @ref）：ref 变了就失配，这里按仓库前缀扫一遍取最新的一条。 */
+      var best = null, bestAt = -1;
+      try {
+        for (var hi = 0; hi < localStorage.length; hi++) {
+          var hk = localStorage.key(hi) || "", hv;
+          if (hk.indexOf("loader_hash_state|" + xBase + "@") !== 0) continue;
+          if (hk.slice(-(n.length + 1)) !== "|" + n) continue;
+          hv = y(hk) || {};
+          if (hv && (Number(hv.at) || 0) > bestAt) { bestAt = Number(hv.at) || 0; best = hv; }
+        }
+      } catch (e) {}
+      if (best) raw = best;
+    }
+    h = raw || {};
+    ht = /^[0-9a-f]{64}$/i.test(h.target || "") ? String(h.target).toLowerCase() : "";
+    hp = /^[0-9a-f]{64}$/i.test(h.prev || "") ? String(h.prev).toLowerCase() : "";
+    if (raw && !hp && xBase) {
+      /* 旧版状态只有 target：把它当作“上一版”，否则首个新版部署不会提示更新。 */
+      try {
+        for (var li = 0; li < localStorage.length; li++) {
+          var lk = localStorage.key(li) || "";
+          if (lk === HsKey || lk.indexOf("loader_hash_state|" + xBase + "@") !== 0) continue;
+          if (lk.slice(-(n.length + 1)) !== "|" + n) continue;
+          var lv = y(lk) || {};
+          var lt = String(lv.target || "").toLowerCase();
+          if (/^[0-9a-f]{64}$/.test(lt) && lt !== ht) { hp = lt; break; }
+        }
+      } catch (e) {}
+    }
+    return { target: ht, prev: hp, at: Number(h.at) || 0 };
   }
   function HsSync() {
     var h = HsRead();
@@ -75,7 +102,7 @@
     return h;
   }
   var Hs = HsSync();
-  var x = s && c ? encodeURIComponent(s) + "/" + encodeURIComponent(c) : "",
+    var x = xBase,
     A = encodeURIComponent(l),
     B = /^[0-9a-f]{7,40}$/i.test(l),
     T = new URL(".", location.href).pathname;
@@ -254,7 +281,7 @@
   var $ = 0,
     MAX_GAME_BYTES = 33554432;
   var q = "pages",
-    Y = "page|" + location.origin + "|" + x + "@" + l + "|" + n,
+    Y = "page|" + location.origin + "|" + x + "|" + n,
     J = null;
   function G() {
     return (
@@ -290,7 +317,8 @@
         var request = store.get(Y);
         request.onsuccess = function () {
           if (request.result) { resolve(request.result); return; }
-          var prefix = "page|" + location.origin + "|" + x + "@" + l + "|" + n + "|";
+          var prefixNew = "page|" + location.origin + "|" + x + "|";
+          var prefixLegacy = "page|" + location.origin + "|" + x + "@";
           var keys = store.getAllKeys();
           keys.onsuccess = function () {
             var seen = [], candidates = [];
@@ -298,10 +326,10 @@
               var text = String(key || "");
               if (text && seen.indexOf(text) < 0) { seen.push(text); candidates.push(text); }
             }
-            if (o) add(prefix + o);
-            if (Hs.prev) add(prefix + Hs.prev);
             (keys.result || []).forEach(function (key) {
-              if (String(key).indexOf(prefix) === 0) add(key);
+              var text = String(key || "");
+              if (text.indexOf(prefixNew) === 0) add(text);
+              else if (text.indexOf(prefixLegacy) === 0 && text.slice(-(n.length + 1)) === "|" + n) add(text);
             });
             var index = 0;
             function next() {
@@ -908,7 +936,7 @@
             }, 900));
         } else ue(W.saveMsg, "没有可用备份");
       }));
-  var Te = "loader_update_check|" + r + "|" + n;
+  var Te = "loader_update_check|" + x + "|" + n;
   function Me(e) {
     W.updBar &&
       (ue(W.updText, "发现游戏新版本"),

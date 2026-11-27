@@ -223,19 +223,21 @@
         return;
       }
       var baseRef = /^[0-9a-f]{7,40}$/i.test(metaRef) ? metaRef : 'main';
-      var updateKey = 'loader_update_check|' + repoMeta + '|' + file;
+      var updateKey = 'loader_update_check|' + encodedRepo + '|' + file;
       var metaHash = String(meta('game-sha256') || '').toLowerCase();
       if (!/^[0-9a-f]{64}$/.test(metaHash)) {
         fail('更新失败：页面哈希无效');
         return;
       }
       var encodedRepo = encodePath(repoPath);
+  /* 用页面里的 ref（部署时是提交号）取文件，避免 jsDelivr @main 的 12 小时旧缓存。 */
+  var encodedRef = encodeURIComponent(baseRef);
       var encodedFile = encodePath(file);
       var urls = [
-        'https://gcore.jsdelivr.net/gh/' + encodedRepo + '@main/' + encodedFile,
-        'https://fastly.jsdelivr.net/gh/' + encodedRepo + '@main/' + encodedFile,
-        'https://cdn.jsdelivr.net/gh/' + encodedRepo + '@main/' + encodedFile,
-        'https://raw.githubusercontent.com/' + encodedRepo + '/main/' + encodedFile
+        'https://gcore.jsdelivr.net/gh/' + encodedRepo + '@' + encodedRef + '/' + encodedFile,
+        'https://fastly.jsdelivr.net/gh/' + encodedRepo + '@' + encodedRef + '/' + encodedFile,
+        'https://cdn.jsdelivr.net/gh/' + encodedRepo + '@' + encodedRef + '/' + encodedFile,
+        'https://raw.githubusercontent.com/' + encodedRepo + '/' + encodedRef + '/' + encodedFile
       ];
 
       /* 不以本地缓存里的旧哈希作为目标值：先向 game-version.json 确认当前 main 的真实哈希。
@@ -259,7 +261,7 @@
           download(currentUrl, 75000).then(function (buffer) {
             return digest(buffer).then(function (hash) {
               if (hash !== expected) throw new Error('SHA-256 不一致');
-              var key = 'page|' + location.origin + '|' + encodedRepo + '@main|' + file;
+              var key = 'page|' + location.origin + '|' + encodedRepo + '|' + file;
               var prefix = key;
               return new Blob([buffer]).text().then(function (html) {
                 return cacheGame({
@@ -270,7 +272,7 @@
                   digest: expected
                 }, prefix).catch(function () { return false; }).then(function () {
                   /* 更新成功后写入当前浏览器的本地覆盖；第二种模式同时由工作流同步 index/404 的哈希。 */
-                  var hashStateKey = 'loader_hash_state|' + repoMeta + '|' + file;
+                  var hashStateKey = 'loader_hash_state|' + encodedRepo + '|' + file;
                   var hashState = readJSON(hashStateKey) || {};
                   var oldHash = /^[0-9a-f]{64}$/i.test(hashState.prev || '') && hashState.prev !== expected
                     ? hashState.prev

@@ -148,6 +148,13 @@ if (exists('loader.js')) {
   if (!/cacheCleanupError/.test(js)) fail('缓存清理失败仍被静默吞掉');
   if (!/navigator\.storage\.estimate/.test(js)) warn('未做配额检查');
   if (!/game-size/.test(js)) warn('未读取 game-size，总量可能退回 CDN 报告值');
+  /* 缓存/版本状态命名空间不能带 ref：ref 每次部署换成提交号，会把缓存和三态判断全部打断。 */
+  if (!/var xBase = s && c \? encodeURIComponent\(s\)/.test(js))
+    fail('loader.js 缺少不含 ref 的 xBase 命名空间');
+  if (/Y = "page\|" \+ location\.origin \+ "\|" \+ x \+ "@" \+ l/.test(js))
+    fail('loader.js 的缓存键仍带 @ref，三态更新提示会被打断');
+  if (!/loader_update_check\|" \+ x \+ "\|"/.test(js))
+    fail('loader.js 的忽略状态键仍带 ref');
 }
 
 /* ---------- 5. JS 语法 ---------- */
