@@ -1,7 +1,7 @@
 /* 游戏加载器 Service Worker：固定 commit 资源缓存优先，导航离线兜底。
    加载器本体（loader.js / loader.css）与更新脚本走网络优先，保证改动立刻生效。
    部署位置：与 index.html 同目录（GitHub Pages 项目站为仓库根目录）。 */
-var VERSION = 'game-loader-sw-v18';
+var VERSION = 'game-loader-sw-v20';
 var CACHE_PREFIX = 'game-loader-sw-';
 var SCOPE = self.registration.scope;
 var INDEX_URL = new URL('index.html', SCOPE).href;

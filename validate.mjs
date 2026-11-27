@@ -30,6 +30,9 @@ for (const page of pages) {
 
   if (/<style\b/i.test(html)) fail(`${page} 仍含内联样式，应放在 loader.css 里`);
 
+  if (exists('loader.css') && !/\.site-link\{/.test(read('loader.css')))
+    fail('loader.css 缺少 .site-link 样式（官网入口会掉在角落）');
+
   for (const asset of ['loader.js', 'loader.css']) {
     if (!new RegExp(`(src|href)="${asset}"`).test(html)) fail(`${page} 未引用 ${asset}`);
     if (!exists(asset)) fail(`${asset} 不存在`);
@@ -47,6 +50,15 @@ for (const page of pages) {
   if (!/^[0-9a-f]{64}$/i.test(meta('game-sha256'))) fail(`${page} game-sha256 不是 64 位十六进制`);
   const size = Number(meta('game-size'));
   if (!(size > 0 && size < 1e9)) fail(`${page} game-size 不合法: ${meta('game-size')}`);
+
+  /* 左上角官网入口：地址与安全属性都在校验里钉死，避免被误改或去掉。 */
+  const siteHref = 'https://www.axxiu.cn/project/l8iKyxdA/';
+  const siteTag = new RegExp(`<a[^>]+href="${siteHref.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^>]*>`).exec(html);
+  if (!siteTag) fail(`${page} 缺少官网入口（${siteHref}）`);
+  else {
+    if (!/\btarget="_blank"/.test(siteTag[0])) fail(`${page} 官网入口未新开窗口`);
+    if (!/\brel="[^"]*noopener/i.test(siteTag[0])) fail(`${page} 官网入口缺少 rel="noopener"`);
+  }
 
   if (!/<meta http-equiv="Content-Security-Policy"/i.test(html)) fail(`${page} 缺少 CSP meta`);
   if (!/frame-src 'self' data: blob:/i.test(html)) fail(`${page} CSP 的 frame-src 不允许 srcdoc 游戏`);
