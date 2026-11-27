@@ -339,11 +339,26 @@
               if (text.indexOf(prefixNew) === 0) add(text);
               else if (text.indexOf(prefixLegacy) === 0 && text.slice(-(n.length + 1)) === "|" + n) add(text);
             });
-            var index = 0;
+            var index = 0, found = [];
+            /* 多版本缓存共存时优先挑“目标版本”，其次“上一版”，再按保存时间取最新；
+               否则可能抓到更早的旧版本，导致三态提示被跳过。 */
+            function pick() {
+              var best = null, bestScore = -1;
+              found.forEach(function (r) {
+                var dg = String((r && r.digest) || "").toLowerCase(), score = 1;
+                if (dg && dg === String(o || "").toLowerCase()) score = 3;
+                else if (dg && dg === String(Hs.prev || "").toLowerCase()) score = 2;
+                var at = Number((r && r.savedAt) || 0);
+                if (score > bestScore || (score === bestScore && at > Number((best && best.savedAt) || 0))) {
+                  bestScore = score; best = r;
+                }
+              });
+              resolve(best);
+            }
             function next() {
-              if (index >= candidates.length) { resolve(null); return; }
+              if (index >= candidates.length) { pick(); return; }
               var get = store.get(candidates[index++]);
-              get.onsuccess = function () { if (get.result) resolve(get.result); else next(); };
+              get.onsuccess = function () { if (get.result) found.push(get.result); next(); };
               get.onerror = next;
             }
             next();
