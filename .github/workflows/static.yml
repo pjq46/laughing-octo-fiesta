@@ -33,6 +33,8 @@ jobs:
         run: node validate.mjs
 
       - name: Sync game version and loader meta
+        env:
+          GAME_REF: ${{ github.sha }}
         run: node sync-game-meta.mjs
 
       - name: Setup Pages
