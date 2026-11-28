@@ -956,18 +956,39 @@
       }));
   var Te = "loader_update_check|" + x + "|" + n;
   var updTimer = null;
-  function Me(e) {
-    W.updBar &&
-      (ue(W.updText, "发现游戏新版本"),
-      (W.updBar.hidden = !1),
-      (W.updYes.onclick = null),
-      (W.updNo.onclick = function () {
+  /* soft=true 表示手动检查（“更”/检查更新）触发的提示：忽略只收起，不写持久忽略。 */
+  function Me(e, soft) {
+    if (!W.updBar) return;
+    ue(W.updText, "发现游戏新版本");
+    W.updBar.hidden = !1;
+    W.updYes.onclick = function () {
+      W.updBar.hidden = !0;
+      clearTimeout(updTimer);
+      var p = window.__loaderUpdate && window.__loaderUpdate.run ? window.__loaderUpdate.run() : null;
+      (p && p.then ? p : Promise.resolve(!1)).then(function (ok) {
+        if (!ok) {
+          ue(W.updText, "更新未完成，请稍后重试");
+          W.updBar.hidden = !1;
+        }
+      });
+    };
+    W.updNo.onclick = function () {
+      if (!soft) {
         var t = y(Te) || { at: Date.now(), hash: e };
-        ((t.hash = e), (t.dismissed = e), b(Te, t), (W.updBar.hidden = !0));
-      }),
-      clearTimeout(updTimer),
-      (updTimer = setTimeout(function () { W.updBar && (W.updBar.hidden = !0); }, 1e4)));
+        t.hash = e;
+        t.dismissed = e;
+        b(Te, t);
+      }
+      W.updBar.hidden = !0;
+      clearTimeout(updTimer);
+    };
+    clearTimeout(updTimer);
+    updTimer = setTimeout(function () {
+      W.updBar.hidden = !0;
+      clearTimeout(updTimer);
+    }, 1e4);
   }
+
   /* 手动更新入口：放在“存档那一栏”。忽略只按版本哈希记录，这里点击会清掉忽略，
      先比对远端清单与本地缓存，已最新就提示，否则直接走更新（下载→校验→重载）。 */
   function CheckUpdate() {
@@ -993,12 +1014,7 @@
       K().then(function (rec) {
         var cached = String((rec && rec.digest) || "").toLowerCase();
         if (remote && cached && remote === cached) { settle("已是最新版本"); return; }
-        W.updBar && (W.updBar.hidden = !1);
-        ue(W.updText, "发现新版本，开始更新…");
-        var p = hook.run ? hook.run() : null;
-        (p && p.then ? p : Promise.resolve(!1)).then(function (ok) {
-          if (!ok) { btn.disabled = !1; ue(W.updText, "更新未完成，请稍后重试"); }
-        });
+        (btn.disabled = !1), Me(remote, !0);
       }, function () { settle("读取本地缓存失败"); });
     }, function () { settle("检查更新失败，请重试"); });
   }
