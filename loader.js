@@ -445,6 +445,7 @@
     "updYes",
     "updNo",
     "checkUpd",
+    "checkHandle",
   ].forEach(function (e) {
     W[e] = document.getElementById(e);
   }),
@@ -627,6 +628,7 @@
       (W.stage.srcdoc = o),
       (W.stage.style.display = "block"),
       W.saveHandle && (W.saveHandle.style.display = "block"),
+      W.checkHandle && (W.checkHandle.style.display = "block"),
       r ||
         (function (e, t, n) {
           if (e && !(e.length > MAX_GAME_BYTES)) {
@@ -953,6 +955,7 @@
         } else ue(W.saveMsg, "没有可用备份");
       }));
   var Te = "loader_update_check|" + x + "|" + n;
+  var updTimer = null;
   function Me(e) {
     W.updBar &&
       (ue(W.updText, "发现游戏新版本"),
@@ -961,7 +964,9 @@
       (W.updNo.onclick = function () {
         var t = y(Te) || { at: Date.now(), hash: e };
         ((t.hash = e), (t.dismissed = e), b(Te, t), (W.updBar.hidden = !0));
-      }));
+      }),
+      clearTimeout(updTimer),
+      (updTimer = setTimeout(function () { W.updBar && (W.updBar.hidden = !0); }, 1e4)));
   }
   /* 手动更新入口：放在“存档那一栏”。忽略只按版本哈希记录，这里点击会清掉忽略，
      先比对远端清单与本地缓存，已最新就提示，否则直接走更新（下载→校验→重载）。 */
@@ -998,6 +1003,7 @@
     }, function () { settle("检查更新失败，请重试"); });
   }
   W.checkUpd && (W.checkUpd.onclick = CheckUpdate);
+  W.checkHandle && (W.checkHandle.onclick = CheckUpdate);
   var je = !1;
   /* 首连对冲等待：第一条线路 7 秒内没建立连接才开第二条（原先 5 秒偏激进）。 */
   var Ee = 7e3;
@@ -1367,7 +1373,8 @@
       (W.retry.style.display = "none"),
       W.diagBtn && (W.diagBtn.style.display = "none"),
       (W.stage.style.display = "none"),
-      W.saveHandle && (W.saveHandle.style.display = "none"));
+      W.saveHandle && (W.saveHandle.style.display = "none"),
+      W.checkHandle && (W.checkHandle.style.display = "none"));
     try {
       W.stage.removeAttribute("srcdoc");
     } catch (e) {}

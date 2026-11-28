@@ -45,6 +45,7 @@ for (const page of pages) {
   if (js && !html.includes(js)) fail(`${page} 的内联脚本与 loader.js 不一致`);
 
   if (!/<button[^>]+id="checkUpd"[^>]*>检查更新<\/button>/.test(html)) fail(`${page} 缺少“检查更新”按钮（存档一栏）`);
+  if (!/<button[^>]+id="checkHandle"/.test(html)) fail(`${page} 缺少“更”常驻标签（游戏内检查更新）`);
 
   const auth = exists('update-auth.js') ? read('update-auth.js') : '';
   if (!/loader_hash_state/.test(auth)) fail('update-auth.js 未记录 loader_hash_state');
@@ -146,6 +147,8 @@ if (exists('loader.js')) {
   if (/\beval\s*\(/.test(js)) fail('loader.js 使用了 eval');
   if (!/function CheckUpdate/.test(js)) fail('loader.js 缺少手动检查更新逻辑');
   if (!/__loaderUpdate/.test(js)) fail('loader.js 未接入 __loaderUpdate');
+  if (!/updTimer/.test(js) || !/1e4/.test(js)) fail('加载器更新提示未设置 10 秒自动消失');
+  if (!/checkHandle/.test(js)) fail('loader.js 未绑定常驻“更”标签');
   if (/function De\(/.test(js)) warn('loader.js 仍存在已废弃的 De()');
   if (!/var Ee = 7e3/.test(js)) warn('首连对冲不再是 7 秒');
   if (!/STALL_MS/.test(js)) warn('缺少传输停滞对冲');
